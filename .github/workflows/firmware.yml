@@ -1,0 +1,61 @@
+name: Firmware bauen
+
+# Baut die Stellpult-Firmware (ESP32 WROOM-32), sobald sich der Sketch ändert, und legt
+# firmware/fensterbahn.bin + firmware/version.txt ins Repo. Der ESP holt sich die Datei beim Einschalten.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fensterbahn/**"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firmware
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: ESP32-Core und Bibliotheken
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.12
+          arduino-cli lib install "Adafruit NeoPixel" "Adafruit MCP23017 Arduino Library" "U8g2"
+
+      - name: Prüfen, dass keine Zugangsdaten im Repo stehen
+        run: |
+          test ! -e fensterbahn/secrets.h
+          ! grep -rEn 'github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}' fensterbahn
+
+      - name: Kompilieren
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --output-dir build fensterbahn
+          ls -l build
+
+      - name: Firmware ins Repo
+        run: |
+          VER=$(sed -n 's/^#define FW_VERSION "\([0-9.]*\)".*/\1/p' fensterbahn/fensterbahn.ino | head -1)
+          echo "Version $VER"
+          test -n "$VER"
+          cp build/fensterbahn.ino.bin firmware/fensterbahn.bin
+          printf '%s\n' "$VER" > firmware/version.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/fensterbahn.bin firmware/version.txt
+          if git diff --cached --quiet; then echo "nichts geändert"; exit 0; fi
+          git commit -m "Firmware $VER gebaut (automatisch)"
+          git push origin HEAD:main
