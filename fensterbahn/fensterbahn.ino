@@ -105,6 +105,7 @@ Adafruit_NeoPixel pult(PERLEN_GESAMT, PIN_LED_PULT, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel haus(HAUS_N * LED_PRO_HAUS, PIN_LED_HAUS, NEO_GRB + NEO_KHZ800);
 Adafruit_MCP23X17 mcpPult, mcpRel;
 bool pultOk = false, relOk = false, oledOk = false; uint8_t relAdr = 0;
+char i2cListe[64] = "-";        // gefundene I2C-Adressen (Website)
 U8G2_SH1106_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
 Preferences prefs;
 WebServer server(80);
@@ -458,7 +459,6 @@ void wlanSetup() {
 
 // ---------------- I2C-Geräte ----------------
 bool da(uint8_t a) { Wire.beginTransmission(a); return Wire.endTransmission() == 0; }
-char i2cListe[64] = "-";
 void i2cScan() {                               // alle Adressen auf dem Bus, für die Website
   i2cListe[0] = 0;
   for (uint8_t a = 0x08; a < 0x78; a++) if (da(a)) { char t[6]; snprintf(t, sizeof t, "0x%02X ", a); strncat(i2cListe, t, sizeof i2cListe - strlen(i2cListe) - 1); }
