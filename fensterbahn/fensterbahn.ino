@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.5"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.6"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -346,7 +346,7 @@ void zeichnePult() {
 }
 
 // ---------------- Häuser ----------------
-struct Raum { bool an; uint32_t naechst; uint8_t effekt; uint8_t art; uint8_t hell; };
+struct Raum { bool an; uint32_t naechst; uint8_t effekt; uint8_t art; uint8_t hell; uint8_t lv, ziel; uint32_t flack; };
 Raum raum[HAUS_N][2];
 uint32_t hf(uint8_t r, uint8_t g, uint8_t b) { return haus.Color(r * HELL_HAUS / 255, g * HELL_HAUS / 255, b * HELL_HAUS / 255); }
 uint32_t hfd(uint8_t r, uint8_t g, uint8_t b, uint8_t h) { return hf(r * h / 100, g * h / 100, b * h / 100); }   // h = Helligkeit in %
@@ -390,8 +390,15 @@ void zeichneHaeuser() {
           case FABRIK:  f = hf(255, 230, 190); break;
           case BAHNHOF: f = hf(255, 190, 110); break;
           default:
-            if (x.effekt == 1) { uint8_t v = 60 + random(60); f = hf(v / 2, v / 2 + 10, v + 40); }                // Fernseher
-            else if (x.effekt == 2) { uint8_t v = 35 + random(25); f = hfd(255, 105, 15, v); }                  // Kerze: dunkel, flackernd
+            if (x.effekt == 1 || x.effekt == 2) {
+              // Fernseher: Helligkeit springt alle 0,3-1 s. Kerze: zittert sanft (geglättet, nicht jedes Bild neu)
+              if ((int32_t)(t - x.flack) >= 0) {
+                x.ziel = x.effekt == 1 ? random(35, 101) : random(60, 96);
+                x.flack = t + (x.effekt == 1 ? random(300, 1000) : random(80, 250));
+              }
+              if (x.effekt == 1) x.lv = x.ziel; else x.lv += ((int)x.ziel - (int)x.lv) / 4;
+              f = x.effekt == 1 ? hfd(110, 140, 255, x.lv) : hfd(255, 150, 45, x.lv * 3 / 4);
+            }
             else f = hfd(LICHTFARBE[x.art][0], LICHTFARBE[x.art][1], LICHTFARBE[x.art][2], x.hell ? x.hell : 100);
         }
       }
