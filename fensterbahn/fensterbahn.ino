@@ -352,7 +352,8 @@ uint32_t hfd(uint8_t r, uint8_t g, uint8_t b, uint8_t h) { return hf(r * h / 100
 void setRaum(int h, int r, uint32_t f) { for (int i = 0; i < 4; i++) haus.setPixelColor(h * LED_PRO_HAUS + r * 4 + i, f); }
 // Lichtfarbe eines Zimmers: 0 warmweiß, 1 gelb, 2 weißer, 3 sehr warm (Glühbirne)
 const uint8_t LICHTFARBE[4][3] = { {255, 170, 80}, {255, 140, 40}, {255, 215, 170}, {255, 120, 30} };
-void neueLichtart(Raum &x) {
+void neueLichtart(int h, int r) {   // (Index statt Referenz: Arduino-Prototypen kennen Raum noch nicht)
+  Raum &x = raum[h][r];
   int z = random(100);
   x.effekt = z < 15 ? 1 : (z < 35 ? 2 : 0);    // 15 % Fernseher, 20 % Kerzenschein, sonst Lampe
   x.art = random(4);
@@ -374,10 +375,10 @@ void zeichneHaeuser() {
       else if ((int32_t)(t - x.naechst) >= 0) {
         bool warAn = x.an;
         x.an = random(100) < 60;
-        if (x.an && !warAn) neueLichtart(x);
+        if (x.an && !warAn) neueLichtart(h, r);
         x.naechst = t + random(8000, 45000);
       }
-      if (licht == ABEND && x.hell == 0) neueLichtart(x);
+      if (licht == ABEND && x.hell == 0) neueLichtart(h, r);
       uint32_t f = 0;
       if (x.an) {
         switch (HAEUSER[h]) {
