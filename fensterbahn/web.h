@@ -30,6 +30,7 @@ button:active{transform:scale(.97)}button small{display:block;font-weight:500;co
 details{margin:4px 8px 30px;border:1px solid var(--line);border-radius:16px;background:var(--pan);padding:4px 14px}
 summary{padding:10px 0;font-weight:700;cursor:pointer;color:var(--mut)}label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}
 input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0b0f15;color:var(--txt);font:inherit}input[type=range]{padding:0}
+.testgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin:10px 0}.testgrid button{padding:10px 6px;font-size:13px}.hinweis{color:var(--mut);font-size:13px}
 .zeile{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin:8px 0}a{color:var(--blu)}
 @media(min-width:900px){body{max-width:1100px;margin:auto}.bar{grid-template-columns:repeat(4,1fr)}#bStop{grid-column:auto}}
 </style></head><body>
@@ -56,6 +57,10 @@ input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);ba
 <p><button type="submit">Schlüssel speichern</button></p></form>
 <div class="zeile"><span>Update von Hand</span><a href="/update">Datei hochladen</a></div>
 <div class="zeile"><span>Display</span><span id="cO"></span></div><div class="zeile"><span>I²C-Bus</span><span id="i2c"></span></div><div class="zeile"><span>Netz</span><span id="net"></span></div></details>
+<details><summary>Test</summary>
+<p class="hinweis">Der Märklin-Trafo darf an bleiben: einzelne Relais klicken nur, ohne „Puls“ schaltet keine Weiche.</p>
+<div class="testgrid"><button data-t="a=rel">Alle Relais nacheinander</button><button data-t="a=led">LED-Test</button><button data-t="a=stop">Test stoppen</button></div>
+<div class="testgrid" id="relTest"></div></details>
 <script>
 const $=id=>document.getElementById(id);let S=null,V=-1,msgAlt='';
 const LICHT=['Tag','Abend','Zufall'],WL=['W1','W2','W3','W4'];
@@ -82,6 +87,9 @@ document.querySelectorAll('[data-c]').forEach(e=>{const c=e.dataset.c;
  if(c==='E'){const an=ev=>{ev.preventDefault();cls(e,'druck',1);cmd('E')},aus=()=>{cls(e,'druck',0);cmd('E0')};
   e.addEventListener('pointerdown',an);e.addEventListener('pointerup',aus);e.addEventListener('pointerleave',()=>{if(e.classList.contains('druck'))aus()})}
  else e.addEventListener('click',()=>cmd(c))});
+const RN=['Puls','W1 gerade','W1 abzweig','W2 gerade','W2 abzweig','W3 gerade','W3 abzweig','W4 gerade','W4 abzweig','S1 rot','S1 grün','S2 rot','S2 grün','Entkuppler','Mühle','Qualm'];
+RN.forEach((n,i)=>{const b=document.createElement('button');b.dataset.t='r='+(i+1);b.innerHTML=(i+1)+'<small>'+n+'</small>';$('relTest').appendChild(b)});
+document.querySelectorAll('[data-t]').forEach(e=>e.addEventListener('click',()=>hol('/test?'+e.dataset.t)));
 $('check').onclick=e=>{e.preventDefault();$('upd').textContent='(suche ...)';hol('/check')};
 $('takt').oninput=e=>$('tTakt').textContent=e.target.value;$('takt').onchange=e=>hol('/set?takt='+e.target.value);
 const R=$('runde'),Z=$('zug');let L=0,pos=0,alt=0;try{L=R.getTotalLength()}catch(e){}

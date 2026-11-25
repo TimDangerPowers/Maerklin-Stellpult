@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.3"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.4"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -157,6 +157,54 @@ void pulsLoop() {
   }
 }
 
+
+// ---------------- Testmodus (Website > Einstellungen > Test) ----------------
+const char *const REL_NAME[16] = { "Puls", "W1 gerade", "W1 abzweig", "W2 gerade", "W2 abzweig", "W3 gerade", "W3 abzweig",
+  "W4 gerade", "W4 abzweig", "S1 rot", "S1 gruen", "S2 rot", "S2 gruen", "Entkuppler", "Muehle", "Qualm" };
+uint8_t testArt = 0;                 // 0 aus, 1 alle Relais nacheinander, 2 LED-Test
+uint32_t testSeit = 0; int testSchritt = -1; int8_t testRel = -1; uint32_t testRelBis = 0;
+bool testFrei() { return phase == P_FREI && qKopf == qEnde; }   // nie während eine Weiche geschaltet wird
+void testRelais(int n) {                                       // ein Relais 0,4 s an (ohne Puls: Spulen bekommen keinen Strom)
+  if (n < 0 || n > 15 || !testFrei()) return;
+  if (testRel >= 0) rel(testRel, false);
+  testRel = n; rel(n, true); testRelBis = millis() + 400;
+  char m[48]; snprintf(m, sizeof m, "Test: Relais %d = %s", n + 1, REL_NAME[n]); melde(m);
+}
+void testStart(uint8_t art) { testArt = art; testSeit = millis(); testSchritt = -1; melde(art == 1 ? "Relais-Test startet" : "LED-Test startet"); }
+void testStopp() { if (testRel >= 0) { rel(testRel, false); testRel = -1; } if (testArt) { testArt = 0; melde("Test beendet"); } }
+void testLoop() {
+  uint32_t t = millis();
+  if (testRel >= 0 && (int32_t)(t - testRelBis) >= 0) { rel(testRel, false); testRel = -1; }
+  if (testArt == 1) {
+    int sch = (t - testSeit) / 1200;
+    if (sch >= 16) testStopp(); else if (sch != testSchritt) { testSchritt = sch; testRelais(sch); }
+  } else if (testArt == 2) {
+    int sch = (t - testSeit) / 400;
+    if (sch >= 9 + PERLEN_GESAMT) testStopp();
+    else if (sch != testSchritt) {
+      testSchritt = sch; char m[48];
+      if (sch < 9) snprintf(m, sizeof m, "LED-Test: alle %s", sch < 3 ? "ROT" : sch < 6 ? "GRUEN" : "BLAU");
+      else snprintf(m, sizeof m, "LED-Test: Pult-Perle %d von %d", sch - 8, PERLEN_GESAMT);
+      if (sch == 0 || sch == 3 || sch == 6 || sch >= 9) melde(m);
+    }
+  }
+}
+void zeichneTest() {
+  static const uint8_t HF[6][3] = { {255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {255, 200, 0}, {200, 0, 255}, {0, 220, 220} };
+  int sch = testSchritt < 0 ? 0 : testSchritt;
+  pult.clear(); haus.clear();
+  if (sch < 9) {
+    uint8_t r = sch < 3 ? 60 : 0, g = (sch >= 3 && sch < 6) ? 60 : 0, b = sch >= 6 ? 60 : 0;
+    for (int i = 0; i < PERLEN_GESAMT; i++) pult.setPixelColor(i, pult.Color(r, g, b));
+    for (int i = 0; i < HAUS_N * LED_PRO_HAUS; i++) haus.setPixelColor(i, haus.Color(r, g, b));
+  } else {
+    pult.setPixelColor(sch - 9, pult.Color(60, 60, 60));                    // Lauflicht: eine Perle nach der anderen
+    for (int h = 0; h < HAUS_N; h++) for (int i = 0; i < LED_PRO_HAUS; i++)  // jedes Haus in eigener Farbe
+      haus.setPixelColor(h * LED_PRO_HAUS + i, haus.Color(HF[h % 6][0] / 4, HF[h % 6][1] / 4, HF[h % 6][2] / 4));
+  }
+  pult.show(); haus.show();
+}
+
 // ---------------- Aktionen ----------------
 const char *WN[4] = {"W1", "W2", "W3", "W4"};
 void weiche(int w, bool abz) {
@@ -209,6 +257,7 @@ void schleifeAn(bool an) {
   else melde("AUTO: aus");
 }
 void stopp() {
+  testStopp();
   schleife = false; wechselLaeuft = false;
   stelle(A_S1, false); stelle(A_S2, false);
   if (anim) setzeAnim(false);
@@ -296,10 +345,19 @@ void zeichnePult() {
 }
 
 // ---------------- Häuser ----------------
-struct Raum { bool an; uint32_t naechst; uint8_t effekt; };
+struct Raum { bool an; uint32_t naechst; uint8_t effekt; uint8_t art; uint8_t hell; };
 Raum raum[HAUS_N][2];
 uint32_t hf(uint8_t r, uint8_t g, uint8_t b) { return haus.Color(r * HELL_HAUS / 255, g * HELL_HAUS / 255, b * HELL_HAUS / 255); }
+uint32_t hfd(uint8_t r, uint8_t g, uint8_t b, uint8_t h) { return hf(r * h / 100, g * h / 100, b * h / 100); }   // h = Helligkeit in %
 void setRaum(int h, int r, uint32_t f) { for (int i = 0; i < 4; i++) haus.setPixelColor(h * LED_PRO_HAUS + r * 4 + i, f); }
+// Lichtfarbe eines Zimmers: 0 warmweiß, 1 gelb, 2 weißer, 3 sehr warm (Glühbirne)
+const uint8_t LICHTFARBE[4][3] = { {255, 170, 80}, {255, 140, 40}, {255, 215, 170}, {255, 120, 30} };
+void neueLichtart(Raum &x) {
+  int z = random(100);
+  x.effekt = z < 15 ? 1 : (z < 35 ? 2 : 0);    // 15 % Fernseher, 20 % Kerzenschein, sonst Lampe
+  x.art = random(4);
+  x.hell = random(100) < 30 ? random(25, 50) : random(60, 101);   // manchmal gedimmt
+}
 uint32_t schweissen(uint32_t t, int h) {
   uint32_t z = (t / 50 + h * 37) % 120;
   if (z < 40 && random(100) < 45) return hf(170, 200, 255);
@@ -314,19 +372,21 @@ void zeichneHaeuser() {
       if (licht == TAG) x.an = false;
       else if (licht == ABEND) { if (!x.an && t - lichtSeit > (uint32_t)(h * 2 + r) * 1500) x.an = true; }
       else if ((int32_t)(t - x.naechst) >= 0) {
+        bool warAn = x.an;
         x.an = random(100) < 60;
-        x.effekt = (r == 0 && random(100) < 25) ? 1 : (random(100) < 20 ? 2 : 0);
+        if (x.an && !warAn) neueLichtart(x);
         x.naechst = t + random(8000, 45000);
       }
+      if (licht == ABEND && x.hell == 0) neueLichtart(x);
       uint32_t f = 0;
       if (x.an) {
         switch (HAEUSER[h]) {
           case FABRIK:  f = hf(255, 230, 190); break;
           case BAHNHOF: f = hf(255, 190, 110); break;
           default:
-            if (x.effekt == 1) { uint8_t v = 60 + random(60); f = hf(v / 2, v / 2 + 10, v + 40); }
-            else if (x.effekt == 2) { uint8_t v = 140 + random(70); f = hf(v, v / 3, 0); }
-            else f = hf(255, 150, 60);
+            if (x.effekt == 1) { uint8_t v = 60 + random(60); f = hf(v / 2, v / 2 + 10, v + 40); }                // Fernseher
+            else if (x.effekt == 2) { uint8_t v = 35 + random(25); f = hfd(255, 105, 15, v); }                  // Kerze: dunkel, flackernd
+            else f = hfd(LICHTFARBE[x.art][0], LICHTFARBE[x.art][1], LICHTFARBE[x.art][2], x.hell ? x.hell : 100);
         }
       }
       setRaum(h, r, f);
@@ -426,6 +486,13 @@ void webSetup() {
     server.sendHeader("Location", "/"); server.send(303);
     updatePruefen(); version++;
   });
+  server.on("/test", [] {
+    if (server.hasArg("r")) testRelais(server.arg("r").toInt() - 1);
+    else if (server.arg("a") == "rel") testStart(1);
+    else if (server.arg("a") == "led") testStart(2);
+    else testStopp();
+    server.send(200, "application/json", zustandJson());
+  });
   server.on("/check", [] { updatePruefen(); version++; server.send(200, "application/json", zustandJson()); });
   server.on("/update", HTTP_GET, [] { if (!otaErlaubt()) return; server.send_P(200, "text/html; charset=utf-8", UPDATE_HTML); });
   server.on("/update", HTTP_POST, [] {
@@ -509,7 +576,8 @@ void loop() {
   autoLoop();
   pulsLoop();
   uint32_t t = millis();
-  if (t - letztesBild > 33) { letztesBild = t; zeichnePult(); zeichneHaeuser(); }
+  testLoop();
+  if (t - letztesBild > 33) { letztesBild = t; if (testArt == 2) zeichneTest(); else { zeichnePult(); zeichneHaeuser(); } }
   if (t - letztesDisplay > 250) { letztesDisplay = t; zeichneDisplay(); }
   if (t - letzterScan > 5000 && (!relOk || !pultOk || !oledOk)) { letzterScan = t; i2cGeraete(); }   // alle 5 s: fehlt etwas? Bus neu ansehen
 }
