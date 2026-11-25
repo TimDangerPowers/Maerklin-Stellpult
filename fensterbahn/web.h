@@ -30,7 +30,7 @@ button:active{transform:scale(.97)}button small{display:block;font-weight:500;co
 details{margin:4px 8px 30px;border:1px solid var(--line);border-radius:16px;background:var(--pan);padding:4px 14px}
 summary{padding:10px 0;font-weight:700;cursor:pointer;color:var(--mut)}label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}
 input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0b0f15;color:var(--txt);font:inherit}input[type=range]{padding:0}
-.testgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin:10px 0}.testgrid button{padding:10px 6px;font-size:13px}.hinweis{color:var(--mut);font-size:13px}
+.testgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin:10px 0}.testgrid button{padding:10px 6px;font-size:13px}.hinweis{color:var(--mut);font-size:13px}.hausz{display:grid;grid-template-columns:70px 1fr;gap:6px 10px;align-items:center;margin:10px 0;padding-bottom:10px;border-bottom:1px solid var(--line)}.hausz input{grid-column:1/-1}.hausz span{grid-column:1/-1;color:var(--mut);font-size:12px}.hausz select{font:inherit;background:#10151d;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:8px}
 .zeile{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin:8px 0}a{color:var(--blu)}
 @media(min-width:900px){body{max-width:1100px;margin:auto}.bar{grid-template-columns:repeat(4,1fr)}#bStop{grid-column:auto}}
 </style></head><body>
@@ -57,6 +57,7 @@ input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);ba
 <p><button type="submit">Schlüssel speichern</button></p></form>
 <div class="zeile"><span>Update von Hand</span><a href="/update">Datei hochladen</a></div>
 <div class="zeile"><span>Display</span><span id="cO"></span></div><div class="zeile"><span>I²C-Bus</span><span id="i2c"></span></div><div class="zeile"><span>Netz</span><span id="net"></span></div></details>
+<details><summary>Häuser</summary><p class="hinweis">Haus 1 ist der erste LED-Streifen an der Kette, Haus 2 der zweite usw.</p><div id="hausListe"></div></details>
 <details><summary>Test</summary>
 <p class="hinweis">Der Märklin-Trafo darf an bleiben: einzelne Relais klicken nur, ohne „Puls“ schaltet keine Weiche.</p>
 <div class="testgrid"><button data-t="a=rel">Alle Relais nacheinander</button><button data-t="a=led">LED-Test</button><button data-t="a=stop">Test stoppen</button></div>
@@ -79,7 +80,7 @@ function zeige(s){S=s;const t=Date.now();
  $('sLicht').textContent=LICHT[s.licht];cls($('bLicht'),'on-a',s.licht);cls($('bAnim'),'on-a',s.anim);
  cls($('zug'),'an',s.loop||s.wechsel);
  cls($('cR'),'ok',s.rel);cls($('cR'),'bad',!s.rel);cls($('cP'),'ok',s.pult);cls($('cP'),'bad',!s.pult);
- $('fw').textContent='v'+s.fw;$('upd').textContent=s.upd?'('+s.upd+')':'';$('tok').textContent=s.tok?'(gespeichert)':'(fehlt)';$('cO').textContent=s.oled?'ok':'nicht gefunden';$('i2c').textContent=s.i2c||'';$('net').textContent=s.sta?'Heim-WLAN':'eigenes WLAN „Fensterbahn“';
+ $('fw').textContent='v'+s.fw;$('upd').textContent=s.upd?'('+s.upd+')':'';$('tok').textContent=s.tok?'(gespeichert)':'(fehlt)';$('cO').textContent=s.oled?'ok':'nicht gefunden';$('i2c').textContent=s.i2c||'';hausUI(s);$('net').textContent=s.sta?'Heim-WLAN':'eigenes WLAN „Fensterbahn“';
  if(document.activeElement!==$('takt')){$('takt').value=s.takt;$('tTakt').textContent=s.takt}}
 async function hol(u){try{const r=await fetch(u,{cache:'no-store'});zeige(await r.json())}catch(e){$('msg').textContent='Keine Verbindung zur Bahn …'}}
 function cmd(c){if(navigator.vibrate)navigator.vibrate(12);hol('/cmd?c='+c)}
@@ -87,6 +88,11 @@ document.querySelectorAll('[data-c]').forEach(e=>{const c=e.dataset.c;
  if(c==='E'){const an=ev=>{ev.preventDefault();cls(e,'druck',1);cmd('E')},aus=()=>{cls(e,'druck',0);cmd('E0')};
   e.addEventListener('pointerdown',an);e.addEventListener('pointerup',aus);e.addEventListener('pointerleave',()=>{if(e.classList.contains('druck'))aus()})}
  else e.addEventListener('click',()=>cmd(c))});
+const HT=['Wohnhaus','Fabrik','Mühle','Bahnhof','aus'];let hausGebaut=false;
+function hausUI(s){if(!s.haus)return;if(!hausGebaut){hausGebaut=true;$('hausListe').innerHTML=s.haus.map((x,i)=>`<div class="hausz"><b>Haus ${i+1}</b><select data-h="${i+1}">${HT.map((n,k)=>`<option value="${k}">${n}</option>`).join('')}</select><input type="range" min="5" max="100" step="5" data-hh="${i+1}"><span id="hp${i+1}"></span></div>`).join('');
+ document.querySelectorAll('[data-h]').forEach(e=>e.onchange=()=>hol('/set?haus='+e.dataset.h+'&typ='+e.value));
+ document.querySelectorAll('[data-hh]').forEach(e=>{e.oninput=()=>$('hp'+e.dataset.hh).textContent=e.value+' %';e.onchange=()=>hol('/set?haus='+e.dataset.hh+'&hell='+e.value)})}
+ s.haus.forEach((x,i)=>{const sel=document.querySelector(`[data-h="${i+1}"]`),r=document.querySelector(`[data-hh="${i+1}"]`);if(document.activeElement!==sel)sel.value=x[0];if(document.activeElement!==r){r.value=x[1];$('hp'+(i+1)).textContent=x[1]+' %'}})}
 const RN=['Puls','W1 gerade','W1 abzweig','W2 gerade','W2 abzweig','W3 gerade','W3 abzweig','W4 gerade','W4 abzweig','S1 rot','S1 grün','S2 rot','S2 grün','Entkuppler','Mühle','Qualm'];
 RN.forEach((n,i)=>{const b=document.createElement('button');b.dataset.t='r='+(i+1);b.innerHTML=(i+1)+'<small>'+n+'</small>';$('relTest').appendChild(b)});
 document.querySelectorAll('[data-t]').forEach(e=>e.addEventListener('click',()=>hol('/test?'+e.dataset.t)));

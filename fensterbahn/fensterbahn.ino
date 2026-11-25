@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.4"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.5"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -66,9 +66,10 @@ const uint32_t QUALM_MAX_MS = 5UL * 60 * 1000;
 const uint32_t E_MAX_MS = 3000;
 const uint32_t UMSCHALT_ANZEIGE_MS = 900;
 
-enum HausTyp { WOHNHAUS, FABRIK, MUEHLE_HAUS, BAHNHOF };
-const HausTyp HAEUSER[] = { BAHNHOF, WOHNHAUS, WOHNHAUS, FABRIK, MUEHLE_HAUS, WOHNHAUS };
-const int HAUS_N = sizeof(HAEUSER) / sizeof(HAEUSER[0]);
+enum HausTyp { WOHNHAUS, FABRIK, MUEHLE_HAUS, BAHNHOF, HAUS_AUS };
+const uint8_t HAEUSER_START[] = { BAHNHOF, WOHNHAUS, WOHNHAUS, FABRIK, MUEHLE_HAUS, WOHNHAUS };   // Grundeinstellung, auf der Website änderbar
+const int HAUS_N = sizeof(HAEUSER_START);
+uint8_t hausTyp[HAUS_N], hausHell[HAUS_N];      // pro Haus: Typ und Helligkeit in % (gespeichert)
 const int LED_PRO_HAUS = 8;
 
 // Pult-Perlen v7 (stellpult_v7.py, REIHENFOLGE). Perle 3 bleibt frei.
@@ -349,6 +350,9 @@ struct Raum { bool an; uint32_t naechst; uint8_t effekt; uint8_t art; uint8_t he
 Raum raum[HAUS_N][2];
 uint32_t hf(uint8_t r, uint8_t g, uint8_t b) { return haus.Color(r * HELL_HAUS / 255, g * HELL_HAUS / 255, b * HELL_HAUS / 255); }
 uint32_t hfd(uint8_t r, uint8_t g, uint8_t b, uint8_t h) { return hf(r * h / 100, g * h / 100, b * h / 100); }   // h = Helligkeit in %
+uint32_t skal(uint32_t c, uint8_t p) {   // Farbe auf p % abdunkeln
+  return ((uint32_t)(((c >> 16) & 255) * p / 100) << 16) | ((uint32_t)(((c >> 8) & 255) * p / 100) << 8) | ((c & 255) * p / 100);
+}
 void setRaum(int h, int r, uint32_t f) { for (int i = 0; i < 4; i++) haus.setPixelColor(h * LED_PRO_HAUS + r * 4 + i, f); }
 // Lichtfarbe eines Zimmers: 0 warmweiß, 1 gelb, 2 weißer, 3 sehr warm (Glühbirne)
 const uint8_t LICHTFARBE[4][3] = { {255, 170, 80}, {255, 140, 40}, {255, 215, 170}, {255, 120, 30} };
@@ -381,7 +385,8 @@ void zeichneHaeuser() {
       if (licht == ABEND && x.hell == 0) neueLichtart(h, r);
       uint32_t f = 0;
       if (x.an) {
-        switch (HAEUSER[h]) {
+        switch (hausTyp[h]) {
+          case HAUS_AUS: f = 0; break;
           case FABRIK:  f = hf(255, 230, 190); break;
           case BAHNHOF: f = hf(255, 190, 110); break;
           default:
@@ -390,9 +395,9 @@ void zeichneHaeuser() {
             else f = hfd(LICHTFARBE[x.art][0], LICHTFARBE[x.art][1], LICHTFARBE[x.art][2], x.hell ? x.hell : 100);
         }
       }
-      setRaum(h, r, f);
+      setRaum(h, r, skal(f, hausHell[h]));
     }
-    if (HAEUSER[h] == FABRIK && anim) {      // Schweißlicht gehört zur Animation
+    if (hausTyp[h] == FABRIK && anim) {      // Schweißlicht gehört zur Animation
       uint32_t s = schweissen(t, h);
       if (s) { haus.setPixelColor(h * LED_PRO_HAUS, s); haus.setPixelColor(h * LED_PRO_HAUS + 1, s); }
     }
@@ -428,13 +433,15 @@ void zeichneDisplay() {
 String zustandJson() {
   uint32_t t = millis();
   uint32_t rest = (schleife && naechsterWechsel > t) ? (naechsterWechsel - t) / 1000 : 0;
-  char b[700];
+  char hs[160] = "", tmp[16];
+  for (int h = 0; h < HAUS_N; h++) { snprintf(tmp, sizeof tmp, "%s[%d,%d]", h ? "," : "", hausTyp[h], hausHell[h]); strcat(hs, tmp); }
+  char b[900];
   snprintf(b, sizeof b,
     "{\"v\":%lu,\"w\":[%d,%d,%d,%d],\"s\":[%d,%d],\"t\":[%d,%d],\"e\":%d,\"loop\":%d,\"wechsel\":%d,\"rest\":%lu,\"takt\":%lu,"
-    "\"gleis\":%d,\"licht\":%d,\"anim\":%d,\"msg\":\"%s\",\"rel\":%d,\"pult\":%d,\"oled\":%d,\"fw\":\"%s\",\"sta\":%d,\"tok\":%d,\"upd\":\"%s\",\"i2c\":\"%s\"}",
+    "\"gleis\":%d,\"licht\":%d,\"anim\":%d,\"msg\":\"%s\",\"rel\":%d,\"pult\":%d,\"oled\":%d,\"fw\":\"%s\",\"sta\":%d,\"tok\":%d,\"upd\":\"%s\",\"i2c\":\"%s\",\"haus\":[%s]}",
     (unsigned long)version, zustand[0], zustand[1], zustand[2], zustand[3], zustand[A_S1], zustand[A_S2], park[0], park[1], eAktiv,
     schleife, wechselLaeuft, (unsigned long)rest, (unsigned long)(wechselMs / 1000), abfahrGleis, licht, anim, meldung,
-    relOk, pultOk, oledOk, FW_VERSION, staModus, githubToken.length() > 0, updInfo.c_str(), i2cListe);
+    relOk, pultOk, oledOk, FW_VERSION, staModus, githubToken.length() > 0, updInfo.c_str(), i2cListe, hs);
   return String(b);
 }
 // ---------------- Update von GitHub ----------------
@@ -474,6 +481,12 @@ void webSetup() {
   server.on("/set", [] {
     if (server.hasArg("takt")) { long s = server.arg("takt").toInt(); if (s >= 20 && s <= 1800) { wechselMs = s * 1000UL; prefs.putULong("takt", wechselMs);
       if (schleife) naechsterWechsel = millis() + wechselMs; version++; } }
+    if (server.hasArg("haus")) { int h = server.arg("haus").toInt() - 1;
+      if (h >= 0 && h < HAUS_N) {
+        if (server.hasArg("typ")) { int t = server.arg("typ").toInt(); if (t >= 0 && t <= HAUS_AUS) hausTyp[h] = t; }
+        if (server.hasArg("hell")) { int v = server.arg("hell").toInt(); if (v >= 5 && v <= 100) hausHell[h] = v; }
+        prefs.putBytes("ht", hausTyp, HAUS_N); prefs.putBytes("hh", hausHell, HAUS_N); version++;
+      } }
     server.send(200, "application/json", zustandJson());
   });
   server.on("/wlan", HTTP_POST, [] {
@@ -560,6 +573,8 @@ void setup() {
   prefs.getBytes("p", park, sizeof(park));
   wechselMs = prefs.getULong("takt", 120000);
   githubToken = prefs.getString("token", "");
+  memcpy(hausTyp, HAEUSER_START, HAUS_N); memset(hausHell, 100, HAUS_N);
+  prefs.getBytes("ht", hausTyp, HAUS_N); prefs.getBytes("hh", hausHell, HAUS_N);
   zustand[A_S1] = zustand[A_S2] = false;                       // nach dem Einschalten alle Signale Halt
   for (int a = 0; a < 6; a++) stelle(a, zustand[a], false);   // gespeicherten Stand einmal pulsen
   setzePark(0, park[0], false); setzePark(1, park[1], false);
