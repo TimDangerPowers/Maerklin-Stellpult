@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.2"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.3"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -366,13 +366,13 @@ void zeichneDisplay() {
 String zustandJson() {
   uint32_t t = millis();
   uint32_t rest = (schleife && naechsterWechsel > t) ? (naechsterWechsel - t) / 1000 : 0;
-  char b[600];
+  char b[700];
   snprintf(b, sizeof b,
     "{\"v\":%lu,\"w\":[%d,%d,%d,%d],\"s\":[%d,%d],\"t\":[%d,%d],\"e\":%d,\"loop\":%d,\"wechsel\":%d,\"rest\":%lu,\"takt\":%lu,"
-    "\"gleis\":%d,\"licht\":%d,\"anim\":%d,\"msg\":\"%s\",\"rel\":%d,\"pult\":%d,\"oled\":%d,\"fw\":\"%s\",\"sta\":%d,\"tok\":%d,\"upd\":\"%s\"}",
+    "\"gleis\":%d,\"licht\":%d,\"anim\":%d,\"msg\":\"%s\",\"rel\":%d,\"pult\":%d,\"oled\":%d,\"fw\":\"%s\",\"sta\":%d,\"tok\":%d,\"upd\":\"%s\",\"i2c\":\"%s\"}",
     (unsigned long)version, zustand[0], zustand[1], zustand[2], zustand[3], zustand[A_S1], zustand[A_S2], park[0], park[1], eAktiv,
     schleife, wechselLaeuft, (unsigned long)rest, (unsigned long)(wechselMs / 1000), abfahrGleis, licht, anim, meldung,
-    relOk, pultOk, oledOk, FW_VERSION, staModus, githubToken.length() > 0, updInfo.c_str());
+    relOk, pultOk, oledOk, FW_VERSION, staModus, githubToken.length() > 0, updInfo.c_str(), i2cListe);
   return String(b);
 }
 // ---------------- Update von GitHub ----------------
@@ -458,15 +458,25 @@ void wlanSetup() {
 
 // ---------------- I2C-Geräte ----------------
 bool da(uint8_t a) { Wire.beginTransmission(a); return Wire.endTransmission() == 0; }
+char i2cListe[64] = "-";
+void i2cScan() {                               // alle Adressen auf dem Bus, für die Website
+  i2cListe[0] = 0;
+  for (uint8_t a = 0x08; a < 0x78; a++) if (da(a)) { char t[6]; snprintf(t, sizeof t, "0x%02X ", a); strncat(i2cListe, t, sizeof i2cListe - strlen(i2cListe) - 1); }
+  if (!i2cListe[0]) strcpy(i2cListe, "nichts gefunden");
+}
+void i2cGeraete() {                            // fehlende Geräte (nach)suchen – auch nachträglich eingesteckte
+  if (!pultOk) { pultOk = da(0x20) && mcpPult.begin_I2C(0x20); if (pultOk) for (int i = 0; i < 16; i++) mcpPult.pinMode(i, INPUT_PULLUP); }
+  if (!relOk) {
+    for (uint8_t a = 0x21; a <= 0x27 && !relOk; a++) if (da(a) && mcpRel.begin_I2C(a)) { relOk = true; relAdr = a; }
+    if (relOk) { mcpRel.writeGPIOAB(0xFFFF); for (int i = 0; i < 16; i++) mcpRel.pinMode(i, OUTPUT); mcpRel.writeGPIOAB(relBild); melde("Relais-MCP gefunden"); }
+  }
+  if (!oledOk) { oledOk = da(0x3C) && oled.begin(); if (oledOk) oled.enableUTF8Print(); }
+  i2cScan();
+}
 void i2cSetup() {
-  Wire.begin(21, 22); Wire.setClock(100000);
-  pultOk = da(0x20) && mcpPult.begin_I2C(0x20);
-  if (pultOk) for (int i = 0; i < 16; i++) mcpPult.pinMode(i, INPUT_PULLUP);
-  for (uint8_t a = 0x21; a <= 0x27 && !relOk; a++) if (da(a) && mcpRel.begin_I2C(a)) { relOk = true; relAdr = a; }
-  if (relOk) { mcpRel.writeGPIOAB(0xFFFF); for (int i = 0; i < 16; i++) mcpRel.pinMode(i, OUTPUT); mcpRel.writeGPIOAB(0xFFFF); }
-  oledOk = da(0x3C) && oled.begin();
-  if (oledOk) oled.enableUTF8Print();
-  Serial.printf("Pult-MCP %s, Relais-MCP %s (0x%02X), OLED %s\n", pultOk ? "ok" : "fehlt", relOk ? "ok" : "fehlt", relAdr, oledOk ? "ok" : "fehlt");
+  Wire.begin(21, 22); Wire.setClock(100000); Wire.setTimeOut(5);   // kurzer Timeout: ein hängender Bus blockiert nicht
+  i2cGeraete();
+  Serial.printf("I2C: %s | Pult-MCP %s, Relais-MCP %s (0x%02X), OLED %s\n", i2cListe, pultOk ? "ok" : "fehlt", relOk ? "ok" : "fehlt", relAdr, oledOk ? "ok" : "fehlt");
 }
 
 void setup() {
@@ -492,7 +502,7 @@ void setup() {
   melde(relOk ? "Bereit" : "Relais-MCP fehlt");
 }
 
-uint32_t letztesBild = 0, letztesDisplay = 0;
+uint32_t letztesBild = 0, letztesDisplay = 0, letzterScan = 0;
 void loop() {
   server.handleClient();
   tastenLoop();
@@ -501,4 +511,5 @@ void loop() {
   uint32_t t = millis();
   if (t - letztesBild > 33) { letztesBild = t; zeichnePult(); zeichneHaeuser(); }
   if (t - letztesDisplay > 250) { letztesDisplay = t; zeichneDisplay(); }
+  if (t - letzterScan > 5000 && (!relOk || !pultOk || !oledOk)) { letzterScan = t; i2cGeraete(); }   // alle 5 s: fehlt etwas? Bus neu ansehen
 }
