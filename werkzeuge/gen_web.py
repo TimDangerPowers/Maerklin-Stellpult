@@ -109,7 +109,7 @@ input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);ba
 <details><summary>Häuser</summary><p class="hinweis">Haus 1 ist der erste LED-Streifen an der Kette, Haus 2 der zweite usw.</p><div id="hausListe"></div></details>
 <details><summary>Test</summary>
 <p class="hinweis">Der Märklin-Trafo darf an bleiben: einzelne Relais klicken nur, ohne „Puls“ schaltet keine Weiche.</p>
-<div class="testgrid"><button data-t="a=rel">Alle Relais nacheinander</button><button data-t="a=led">LED-Test</button><button data-t="a=stop">Test stoppen</button></div>
+<div class="testgrid"><button data-t="a=rel">Alle Relais nacheinander</button><button data-t="a=led">LED-Test</button><button data-t="a=pultan">Pult: alle LEDs an</button><button data-t="a=stop">Test stoppen</button></div>
 <div class="testgrid" id="relTest"></div></details>
 <script>
 const $=id=>document.getElementById(id);let S=null,V=-1,msgAlt='';

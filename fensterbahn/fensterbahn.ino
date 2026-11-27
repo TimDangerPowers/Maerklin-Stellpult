@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.8"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.9"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -517,6 +517,7 @@ void webSetup() {
     if (server.hasArg("r")) testRelais(server.arg("r").toInt() - 1);
     else if (server.arg("a") == "rel") testStart(1);
     else if (server.arg("a") == "led") testStart(2);
+    else if (server.arg("a") == "pultan") { testStopp(); testArt = 3; melde("Pult: alle LEDs an (Test stoppen = aus)"); }
     else testStopp();
     server.send(200, "application/json", zustandJson());
   });
@@ -606,7 +607,9 @@ void loop() {
   pulsLoop();
   uint32_t t = millis();
   testLoop();
-  if (t - letztesBild > 33) { letztesBild = t; if (testArt == 2) zeichneTest(); else { zeichnePult(); zeichneHaeuser(); } }
+  if (t - letztesBild > 33) { letztesBild = t; if (testArt == 2) zeichneTest();
+    else if (testArt == 3) { for (int i = 0; i < PERLEN_GESAMT; i++) pult.setPixelColor(i, pult.Color(80, 80, 80)); pult.show(); zeichneHaeuser(); }
+    else { zeichnePult(); zeichneHaeuser(); } }
   if (t - letztesDisplay > 250) { letztesDisplay = t; zeichneDisplay(); }
   if (t - letzterScan > 5000 && (!relOk || !pultOk || !oledOk)) { letzterScan = t; i2cGeraete(); }   // alle 5 s: fehlt etwas? Bus neu ansehen
 }
