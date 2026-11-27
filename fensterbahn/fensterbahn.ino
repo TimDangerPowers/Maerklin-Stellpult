@@ -3,11 +3,11 @@
   ESP32 WROOM-32 (38 Pin) auf Shield.
 
   I2C (SDA 21, SCL 22, 3,3 V):
-    - Pult-MCP23017 (0x20): 16 Taster KY-004 gegen GND
+    - Pult-MCP23017 (0x20 oder 0x27): 16 Taster KY-004 gegen GND. 27.11.: Pult-MCP ist das Soldered-Board, ab Werk 0x27
         A0..A7 = W1 W2 W3 W4 S1grün S1rot S2grün S2rot
         B0..B6 = E T1 T2 AUTO STOP LICHT ANIMATION   (B7 frei)
     - OLED 1,3" SH1106 (0x3C) im Pult
-    - Relais-MCP23017 (Soldered, 5 V hinter LLC2, Adresse 0x21..0x27, wird gesucht)
+    - Relais-MCP23017 (WCMCU, 5 V hinter LLC, 0x21, gesucht wird 0x21..0x26)
         GPA0..GPB7 -> RELM-16 IN1..IN16 (schaltet bei LOW)
         IN1 Puls | IN2/3 W1 g/a | IN4/5 W2 | IN6/7 W3 | IN8/9 W4 | IN10/11 S1 rot/grün | IN12/13 S2 rot/grün
         IN14 Entkuppler | IN15 Mühle | IN16 Qualm   (v7.1: kein 8er-Relais, Parkgleise T1/T2 nicht geschaltet)
@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.9"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.10"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -560,9 +560,9 @@ void i2cScan() {                               // alle Adressen auf dem Bus, fü
   if (!i2cListe[0]) strcpy(i2cListe, "nichts gefunden");
 }
 void i2cGeraete() {                            // fehlende Geräte (nach)suchen – auch nachträglich eingesteckte
-  if (!pultOk) { pultOk = da(0x20) && mcpPult.begin_I2C(0x20); if (pultOk) for (int i = 0; i < 16; i++) mcpPult.pinMode(i, INPUT_PULLUP); }
+  if (!pultOk) { for (uint8_t a : {0x20, 0x27}) if (!pultOk && da(a) && mcpPult.begin_I2C(a)) pultOk = true; if (pultOk) for (int i = 0; i < 16; i++) mcpPult.pinMode(i, INPUT_PULLUP); }
   if (!relOk) {
-    for (uint8_t a = 0x21; a <= 0x27 && !relOk; a++) if (da(a) && mcpRel.begin_I2C(a)) { relOk = true; relAdr = a; }
+    for (uint8_t a = 0x21; a <= 0x26 && !relOk; a++) if (da(a) && mcpRel.begin_I2C(a)) { relOk = true; relAdr = a; }
     if (relOk) { mcpRel.writeGPIOAB(0xFFFF); for (int i = 0; i < 16; i++) mcpRel.pinMode(i, OUTPUT); mcpRel.writeGPIOAB(relBild); melde("Relais-MCP gefunden"); }
   }
   if (!oledOk) { oledOk = da(0x3C) && oled.begin(); if (oledOk) oled.enableUTF8Print(); }
