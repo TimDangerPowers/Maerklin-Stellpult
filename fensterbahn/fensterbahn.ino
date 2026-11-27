@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.6"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.7"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -72,10 +72,15 @@ const int HAUS_N = sizeof(HAEUSER_START);
 uint8_t hausTyp[HAUS_N], hausHell[HAUS_N];      // pro Haus: Typ und Helligkeit in % (gespeichert)
 const int LED_PRO_HAUS = 8;
 
-// Pult-Perlen v7 (stellpult_v7.py, REIHENFOLGE). Perle 3 bleibt frei.
+// Pult-Perlen v7.7: so wie Tim die Lichterkette am 27.11. eingelegt hat (Foto), Perle 0 = Stecker-Ende bei T2:
+// T2, T1, W4 abzweig, W4 gerade, W3 gerade, W3 abzweig, E, W2 gerade, W2 abzweig, S1, S2, W1 abzweig, W1 gerade, ANIM, LICHT, AUTO
+// (Reihenfolge innerhalb der Weichen-Paare aus dem Foto geschätzt -> mit dem LED-Test prüfen). T1/T2 sind im Deckel zu und bleiben aus.
 enum PultLed { L_AUTO, L_LICHT, L_ANIM, L_W1_G, L_W1_A, L_S2, L_S1, L_W2_G, L_W2_A,
                L_E, L_W3_G, L_W3_A, L_W4_G, L_W4_A, L_T2, L_T1, PULT_N };
-const uint8_t PERLE[PULT_N] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+const uint8_t PERLE[PULT_N] = { 15, 14, 13, 12, 11, 10, 9, 7, 8, 6, 4, 5, 3, 2, 0, 1 };
+const char *const PULT_NAME[PULT_N] = { "AUTO", "LICHT", "ANIMATION", "W1 gerade", "W1 abzweig", "S2", "S1", "W2 gerade", "W2 abzweig",
+  "E (Entkuppler)", "W3 gerade", "W3 abzweig", "W4 gerade", "W4 abzweig", "T2", "T1" };
+const int PULT_SICHTBAR = L_T2;   // T1/T2 haben kein Fenster mehr im Deckel
 const int PERLEN_GESAMT = 30;
 const uint8_t WEICHE_LED[4][2] = {{L_W1_G, L_W1_A}, {L_W2_G, L_W2_A}, {L_W3_G, L_W3_A}, {L_W4_G, L_W4_A}};
 
@@ -98,7 +103,7 @@ uint8_t abfahrGleis = 1;         // welches Gleis fährt beim nächsten Wechsel 
 bool wechselLaeuft = false; uint32_t wechselRot = 0; uint8_t wechselSignal = A_S1;
 uint32_t autoDruck = 0; bool autoLangErledigt = false;
 // Anzeige
-char meldung[40] = "Bereit";
+char meldung[56] = "Bereit";
 uint32_t meldungSeit = 0;
 uint32_t version = 1;            // zählt bei jeder Änderung hoch (für die Website)
 
@@ -180,12 +185,13 @@ void testLoop() {
     int sch = (t - testSeit) / 1200;
     if (sch >= 16) testStopp(); else if (sch != testSchritt) { testSchritt = sch; testRelais(sch); }
   } else if (testArt == 2) {
-    int sch = (t - testSeit) / 400;
-    if (sch >= 9 + PERLEN_GESAMT) testStopp();
+    uint32_t d = t - testSeit;      // erst 3,6 s alle Farben, dann jede Pult-LED mit Namen 2 s lang
+    int sch = d < 3600 ? d / 400 : 9 + (d - 3600) / 2000;
+    if (sch >= 9 + PULT_SICHTBAR) testStopp();
     else if (sch != testSchritt) {
-      testSchritt = sch; char m[48];
+      testSchritt = sch; char m[64];
       if (sch < 9) snprintf(m, sizeof m, "LED-Test: alle %s", sch < 3 ? "ROT" : sch < 6 ? "GRUEN" : "BLAU");
-      else snprintf(m, sizeof m, "LED-Test: Pult-Perle %d von %d", sch - 8, PERLEN_GESAMT);
+      else snprintf(m, sizeof m, "LED %d/%d leuchtet: %s", sch - 8, PULT_SICHTBAR, PULT_NAME[sch - 9]);
       if (sch == 0 || sch == 3 || sch == 6 || sch >= 9) melde(m);
     }
   }
@@ -199,7 +205,7 @@ void zeichneTest() {
     for (int i = 0; i < PERLEN_GESAMT; i++) pult.setPixelColor(i, pult.Color(r, g, b));
     for (int i = 0; i < HAUS_N * LED_PRO_HAUS; i++) haus.setPixelColor(i, haus.Color(r, g, b));
   } else {
-    pult.setPixelColor(sch - 9, pult.Color(60, 60, 60));                    // Lauflicht: eine Perle nach der anderen
+    pult.setPixelColor(PERLE[sch - 9], pult.Color(60, 60, 60));             // eine Pult-LED nach der anderen, mit Namen
     for (int h = 0; h < HAUS_N; h++) for (int i = 0; i < LED_PRO_HAUS; i++)  // jedes Haus in eigener Farbe
       haus.setPixelColor(h * LED_PRO_HAUS + i, haus.Color(HF[h % 6][0] / 4, HF[h % 6][1] / 4, HF[h % 6][2] / 4));
   }
@@ -335,8 +341,7 @@ void zeichnePult() {
   setP(L_S1, zustand[A_S1] ? GRUEN : ROT);
   setP(L_S2, zustand[A_S2] ? GRUEN : ROT);
   setP(L_E, eAktiv ? GELB : 0);
-  setP(L_T1, park[0] ? GELB_LEICHT : 0);
-  setP(L_T2, park[1] ? GELB_LEICHT : 0);
+  setP(L_T1, 0); setP(L_T2, 0);      // v7.7: T1/T2 nicht mehr im Deckel
   uint32_t blau = pf(40, 120, 255), blauDunkel = pf(10, 30, 70);
   setP(L_AUTO, schleife ? ((t / 600) % 2 ? blau : blauDunkel) : (wechselLaeuft ? blau : 0));
   const uint32_t lf[3] = {pf(120, 120, 120), pf(255, 120, 20), pf(160, 60, 255)};
