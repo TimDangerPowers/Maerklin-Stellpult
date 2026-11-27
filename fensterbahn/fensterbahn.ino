@@ -45,7 +45,7 @@
 #endif
 #include "web.h"
 
-#define FW_VERSION "7.7"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
+#define FW_VERSION "7.8"     // bei jeder neuen Version hochzählen (GitHub baut sie und der ESP holt sie sich)
 #define UPDATE_URL "https://raw.githubusercontent.com/TimDangerPowers/Maerklin-Stellpult/main/firmware/"   // version.txt + fensterbahn.bin
 
 // ================= Pins =================
@@ -72,12 +72,13 @@ const int HAUS_N = sizeof(HAEUSER_START);
 uint8_t hausTyp[HAUS_N], hausHell[HAUS_N];      // pro Haus: Typ und Helligkeit in % (gespeichert)
 const int LED_PRO_HAUS = 8;
 
-// Pult-Perlen v7.7: so wie Tim die Lichterkette am 27.11. eingelegt hat (Foto), Perle 0 = Stecker-Ende bei T2:
-// T2, T1, W4 abzweig, W4 gerade, W3 gerade, W3 abzweig, E, W2 gerade, W2 abzweig, S1, S2, W1 abzweig, W1 gerade, ANIM, LICHT, AUTO
+// Pult-Perlen v7.8: so wie Tim die Lichterkette am 27.11. eingelegt hat (Foto). Das Ende bei T2 ist das AUSGANGS-Ende,
+// der Dateneingang (Perle 0) liegt bei AUTO: AUTO, LICHT, ANIM, W1 gerade, W1 abzweig, S2, S1, W2 abzweig, W2 gerade, E,
+// W3 abzweig, W3 gerade, W4 gerade, W4 abzweig, T1, T2
 // (Reihenfolge innerhalb der Weichen-Paare aus dem Foto geschätzt -> mit dem LED-Test prüfen). T1/T2 sind im Deckel zu und bleiben aus.
 enum PultLed { L_AUTO, L_LICHT, L_ANIM, L_W1_G, L_W1_A, L_S2, L_S1, L_W2_G, L_W2_A,
                L_E, L_W3_G, L_W3_A, L_W4_G, L_W4_A, L_T2, L_T1, PULT_N };
-const uint8_t PERLE[PULT_N] = { 15, 14, 13, 12, 11, 10, 9, 7, 8, 6, 4, 5, 3, 2, 0, 1 };
+const uint8_t PERLE[PULT_N] = { 0, 1, 2, 3, 4, 5, 6, 8, 7, 9, 11, 10, 12, 13, 15, 14 };
 const char *const PULT_NAME[PULT_N] = { "AUTO", "LICHT", "ANIMATION", "W1 gerade", "W1 abzweig", "S2", "S1", "W2 gerade", "W2 abzweig",
   "E (Entkuppler)", "W3 gerade", "W3 abzweig", "W4 gerade", "W4 abzweig", "T2", "T1" };
 const int PULT_SICHTBAR = L_T2;   // T1/T2 haben kein Fenster mehr im Deckel
